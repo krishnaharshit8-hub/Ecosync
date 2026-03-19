@@ -3,7 +3,7 @@ This repo contains our project for Hack4Impact Hackathon. The name of our projec
 
 **Team Name** : C-Sharks
 
-**Team Members** : 1) Siddhartha Sarkar (Team Lead)
+<br>**Team Members** : 1) Siddhartha Sarkar (Team Lead)<br/>
                    2) Harshit Krishna 
                
 **Problem Statement**:
