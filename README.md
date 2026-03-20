@@ -20,7 +20,7 @@ Rapid urbanization and the shift to renewable energy have created a "Grid Instab
 
 > **A next-generation smart city energy management system featuring AI-powered peer-to-peer energy trading, real-time 3D digital twin visualization, and blockchain-based settlement.**
 
-![EcoSync Dashboard](https://via.placeholder.com/800x400/0f172a/10b981?text=EcoSync+3D+Digital+Twin)
+![EcoSync Dashboard (To be added soon..current hyperlink is a placeholder)](https://via.placeholder.com/800x400/0f172a/10b981?text=EcoSync+3D+Digital+Twin)
 
 ## 🚀 Live Demo
 
