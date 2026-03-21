@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Zap, 
   Activity, 
@@ -6,16 +6,12 @@ import {
   Battery, 
   Sun, 
   Cloud, 
-  AlertTriangle,
   Server,
   Cpu,
   Menu,
   X,
   Maximize2,
-  Minimize2,
-  CloudRain,
-  ShieldAlert,
-  DollarSign
+  Minimize2
 } from 'lucide-react';
 import { CityGrid } from '@/components/threejs/CityGrid';
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard';
@@ -30,209 +26,175 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import type { 
-  BuildingTelemetry, 
-  AgentLog, 
-  AnalyticsSummary, 
-  MarketStatus,
-  GridEvent 
-} from '@/types';
+import type { BuildingTelemetry } from '@/types';
 import './App.css';
 
-// WebSocket connection hook
-function useWebSocket(url: string) {
-  const [connected, setConnected] = useState(false);
-  const [buildings, setBuildings] = useState<BuildingTelemetry[]>([]);
-  const [logs, setLogs] = useState<AgentLog[]>([]);
-  const [gridEvents, setGridEvents] = useState<GridEvent[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+const BUILDING_TYPES = [
+  { type: 'hospital',    baseLoad: 500, solar: 300, battery: 2000, priority: true  },
+  { type: 'datacenter',  baseLoad: 800, solar: 200, battery: 3000, priority: true  },
+  { type: 'commercial',  baseLoad: 150, solar: 100, battery: 500,  priority: false },
+  { type: 'commercial',  baseLoad: 120, solar: 80,  battery: 400,  priority: false },
+  { type: 'commercial',  baseLoad: 180, solar: 120, battery: 600,  priority: false },
+  { type: 'residential', baseLoad: 30,  solar: 25,  battery: 100,  priority: false },
+  { type: 'residential', baseLoad: 25,  solar: 20,  battery: 80,   priority: false },
+  { type: 'residential', baseLoad: 35,  solar: 30,  battery: 120,  priority: false },
+  { type: 'residential', baseLoad: 28,  solar: 22,  battery: 90,   priority: false },
+  { type: 'residential', baseLoad: 32,  solar: 28,  battery: 110,  priority: false },
+]
 
-  useEffect(() => {
-    const connect = () => {
-      const ws = new WebSocket(url);
-      
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        setConnected(true);
-      };
+function generateBuildings(tick: number) {
+  const hour = (6 + (tick * 0.05)) % 24
+  const solarFactor = hour >= 6 && hour <= 19
+    ? Math.sin(Math.PI * (hour - 6) / 13) * (0.8 + Math.random() * 0.2)
+    : 0
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          switch (data.type) {
-            case 'telemetry':
-              setBuildings(prev => {
-                const existing = prev.findIndex(b => b.building_id === data.data.building_id);
-                if (existing >= 0) {
-                  const updated = [...prev];
-                  updated[existing] = data.data;
-                  return updated;
-                }
-                return [...prev, data.data];
-              });
-              break;
-            
-            case 'agent_log':
-              setLogs(prev => [...prev, data.data]);
-              break;
-            
-            case 'grid_event':
-              setGridEvents(prev => [...prev, data.data]);
-              break;
-            
-            case 'buildings_list':
-              setBuildings(data.data);
-              break;
-          }
-        } catch (e) {
-          console.error('WebSocket message error:', e);
-        }
-      };
+  return BUILDING_TYPES.map((config, i) => {
+    const noise = 0.85 + Math.random() * 0.3
+    const eveningBoost = 1 + 0.4 * Math.max(0, Math.sin(Math.PI * (hour - 14) / 8))
+    const load = parseFloat((config.baseLoad * eveningBoost * noise).toFixed(1))
+    const solar = parseFloat((config.solar * solarFactor * noise).toFixed(1))
+    const net = solar - load
+    const battery = parseFloat((30 + Math.sin(tick * 0.05 + i) * 35 + 35).toFixed(1))
 
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
-        setConnected(false);
-        // Reconnect after 3 seconds
-        setTimeout(connect, 3000);
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-
-      wsRef.current = ws;
-    };
-
-    connect();
-
-    return () => {
-      wsRef.current?.close();
-    };
-  }, [url]);
-
-  const sendMessage = useCallback((message: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
+    return {
+      building_id: i + 1,
+      building_type: config.type,
+      load,
+      solar_generation: solar,
+      battery_soc: battery,
+      grid_connected: true,
+      is_selling: net > 20,
+      is_buying: net < -20,
+      is_critical: config.priority,
+      is_priority: config.priority,
+      net_energy: parseFloat(net.toFixed(1)),
+      trading_status: net > 20 ? 'selling' : net < -20 ? 'buying' : 'idle',
+      grid_frequency: parseFloat((Math.random() * 0.2 + 59.9).toFixed(2)),
+      timestamp: new Date().toISOString(),
     }
-  }, []);
-
-  return { connected, buildings, logs, gridEvents, sendMessage };
+  })
 }
 
-// API polling hook for analytics
-function useAnalyticsPolling(interval: number = 5000) {
-  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
-  const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
-  const [history, setHistory] = useState<{ time: string; load: number; generation: number; efficiency: number; traditional: number }[]>([]);
+function generateLogs(buildings: any[], tick: number) {
+  const sellers = buildings.filter(b => b.is_selling)
+  const buyers = buildings.filter(b => b.is_buying)
+  const logs = []
+  const ts = new Date().toLocaleTimeString()
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch market status FIRST to include in history
-        let currentMarketPrice = 0.15;
-        const marketRes = await fetch('/api/market/status');
-        if (marketRes.ok) {
-          const marketData = await marketRes.json();
-          setMarketStatus(marketData);
-          currentMarketPrice = marketData.current_price;
-        }
+  if (sellers.length && buyers.length && tick % 3 === 0) {
+    const s = sellers[Math.floor(Math.random() * sellers.length)]
+    const b = buyers[Math.floor(Math.random() * buyers.length)]
+    const amt = (Math.random() * 50 + 10).toFixed(1)
+    const price = (0.06 + Math.random() * 0.04).toFixed(3)
+    logs.push({
+      id: tick,
+      timestamp: ts,
+      level: 'success',
+      agent_id: s.building_id,
+      message: `Building #${s.building_id} → Building #${b.building_id}: Trade ${amt}kW @ $${price}/kWh ✓`,
+      type: 'trade'
+    })
+  }
 
-        // Fetch analytics
-        const analyticsRes = await fetch('/api/analytics/summary');
-        if (analyticsRes.ok) {
-          const analyticsData = await analyticsRes.json();
-          setAnalytics(analyticsData);
-          
-          // Update history
-          setHistory(prev => {
-            const newPoint = {
-              time: new Date().toLocaleTimeString(),
-              load: analyticsData.total_load,
-              generation: analyticsData.total_generation,
-              efficiency: analyticsData.grid_efficiency,
-              traditional: 65, // Traditional grid baseline
-              price: currentMarketPrice
-            };
-            const updated = [...prev, newPoint];
-            return updated.slice(-50); // Keep last 50 points
-          });
-        }
-      } catch (e) {
-        console.error('API fetch error:', e);
+  buildings.forEach(b => {
+    if (Math.random() > 0.85) {
+      const msgs = {
+        selling: `Building #${b.building_id}: Surplus ${b.net_energy}kW detected. Broadcasting ASK @ $0.07/kWh`,
+        buying:  `Building #${b.building_id}: Deficit ${Math.abs(b.net_energy)}kW. Submitting BID @ $0.09/kWh`,
+        idle:    `Building #${b.building_id}: Balanced. Battery ${b.battery_soc}%. Monitoring grid...`,
       }
-    };
+      logs.push({
+        id: tick + Math.random(),
+        timestamp: ts,
+        level: b.trading_status === 'selling' ? 'info' 
+             : b.trading_status === 'buying' ? 'warning' : 'debug',
+        agent_id: b.building_id,
+        message: msgs[b.trading_status as keyof typeof msgs],
+        type: 'agent'
+      })
+    }
+  })
 
-    fetchData();
-    const intervalId = setInterval(fetchData, interval);
-    return () => clearInterval(intervalId);
-  }, [interval]);
+  return logs
+}
 
-  return { analytics, marketStatus, history };
+function generateAnalytics(buildings: any[]) {
+  const totalLoad = buildings.reduce((s, b) => s + b.load, 0)
+  const totalGen  = buildings.reduce((s, b) => s + b.solar_generation, 0)
+  const avgBatt   = buildings.reduce((s, b) => s + b.battery_soc, 0) / buildings.length
+  const efficiency = Math.min(100, (totalGen / Math.max(totalLoad, 1)) * 100)
+  const sellers = buildings.filter(b => b.is_selling).length
+  const buyers  = buildings.filter(b => b.is_buying).length
+
+  return {
+    total_load:       parseFloat(totalLoad.toFixed(1)),
+    total_generation: parseFloat(totalGen.toFixed(1)),
+    avg_battery_soc:  parseFloat(avgBatt.toFixed(1)),
+    grid_efficiency:  parseFloat(efficiency.toFixed(1)),
+    active_sellers:   sellers,
+    active_buyers:    buyers,
+    total_buildings:  buildings.length,
+    trades_today:     Math.floor(Math.random() * 50 + 20),
+    co2_saved:        parseFloat((totalGen * 0.4).toFixed(1)),
+    net_grid_flow:    parseFloat((totalLoad - totalGen).toFixed(1)),
+    building_count:   buildings.length,
+    timestamp:        new Date().toISOString(),
+  }
+}
+
+function generateMarketStatus(tick: number) {
+  return {
+    current_price:   parseFloat((0.08 + Math.sin(tick * 0.02) * 0.04).toFixed(3)),
+    trades_today:    Math.floor(tick * 0.3),
+    total_volume:    parseFloat((tick * 2.5).toFixed(1)),
+    grid_stability:  parseFloat((85 + Math.sin(tick * 0.05) * 10).toFixed(1)),
+    active_sellers:  Math.floor(Math.random() * 15 + 5),
+    active_buyers:   Math.floor(Math.random() * 12 + 3),
+    critical_buildings: Math.floor(Math.random() * 3),
+  }
 }
 
 // Main App Component
 function App() {
-  const wsProtocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = typeof window !== 'undefined' ? `${wsProtocol}//${window.location.host}/ws` : 'ws://localhost:8000/ws';
-  const { connected, buildings, logs, gridEvents } = useWebSocket(wsUrl);
-  const { analytics, marketStatus, history } = useAnalyticsPolling(5000);
-  const [selectedBuilding, setSelectedBuilding] = useState<BuildingTelemetry | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [terminalExpanded, setTerminalExpanded] = useState(false);
-  const [page, setPage] = useState('home');
-  const [mockTick, setMockTick] = useState(0);
-
-  const MOCK_BUILDINGS = useMemo(() => {
-    return Array.from({ length: 20 }, (_, i) => ({
-      building_id: i + 1,
-      building_type: i === 0 ? 'hospital' 
-        : i === 1 ? 'datacenter' 
-        : i < 5 ? 'commercial' 
-        : 'residential',
-      load: parseFloat((Math.random() * 80 + 20).toFixed(1)),
-      solar_generation: parseFloat((Math.random() * 60 + 10).toFixed(1)),
-      battery_soc: parseFloat((Math.random() * 70 + 20).toFixed(1)),
-      grid_connected: true,
-      is_selling: Math.random() > 0.6,
-      is_buying: Math.random() > 0.7,
-      is_critical: i < 3,
-      is_priority: i < 2,
-      net_energy: parseFloat((Math.random() * 40 - 20).toFixed(1)),
-      trading_status: ['selling','buying','idle'][Math.floor(Math.random()*3)],
-      grid_frequency: parseFloat((Math.random() * 0.2 + 59.9).toFixed(2)),
-      timestamp: new Date().toISOString(),
-    }));
-  }, [mockTick]);
+  const [, setTick] = useState(0)
+  const [buildings, setBuildings] = useState(() => generateBuildings(0))
+  const [logs, setLogs] = useState<any[]>([])
+  const [history, setHistory] = useState<any[]>([])
+  const [analytics, setAnalytics] = useState(() => generateAnalytics(generateBuildings(0)))
+  const [marketStatus, setMarketStatus] = useState(() => generateMarketStatus(0))
+  const [selectedBuilding, setSelectedBuilding] = useState<BuildingTelemetry | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [terminalExpanded, setTerminalExpanded] = useState(false)
+  const [page, setPage] = useState('home')
+  const connected = true  // always show as connected in demo
 
   useEffect(() => {
-    if (buildings.length === 0) {
-      const interval = setInterval(() => {
-        // trigger re-render with new random values
-        setMockTick(t => t + 1)
-      }, 2000)
-      return () => clearInterval(interval)
-    }
-  }, [buildings.length]);
+    const interval = setInterval(() => {
+      setTick(t => {
+        const newTick = t + 1
+        const newBuildings = generateBuildings(newTick)
+        const newAnalytics = generateAnalytics(newBuildings)
+        const newMarket    = generateMarketStatus(newTick)
+        const newLogs      = generateLogs(newBuildings, newTick)
 
-  const displayBuildings = buildings.length > 0 ? buildings : MOCK_BUILDINGS;
+        setBuildings(newBuildings)
+        setAnalytics(newAnalytics)
+        setMarketStatus(newMarket)
+        setLogs(prev => [...prev, ...newLogs].slice(-100))
+        setHistory(prev => [...prev, {
+          time:        new Date().toLocaleTimeString(),
+          load:        newAnalytics.total_load,
+          generation:  newAnalytics.total_generation,
+          efficiency:  newAnalytics.grid_efficiency,
+          traditional: 65,
+          price:       newMarket.current_price,
+        }].slice(-50))
 
-  // Get active grid events
-  const activeEvents = gridEvents.filter(e => e.active);
-  const hasCloudCover = activeEvents.some(e => e.type === 'cloud_cover');
-  const hasGridFailure = activeEvents.some(e => e.type === 'grid_failure');
-
-  const triggerEvent = async (type: string, payload: any = {}) => {
-    try {
-      await fetch('/api/grid/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event_type: type, ...payload })
-      });
-    } catch (e) {
-      console.error(e);
-    }
-  };
+        return newTick
+      })
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [])
 
   if (page === 'home') {
     return <HomePage onNavigateToDashboard={() => setPage('dashboard')} />;
@@ -307,28 +269,16 @@ function App() {
             <StatusBadge 
               icon={Sun} 
               label="Solar" 
-              active={!hasCloudCover} 
+              active={true} 
               activeColor="text-amber-400"
             />
             <StatusBadge 
               icon={Activity} 
               label="Grid" 
-              active={!hasGridFailure} 
+              active={true} 
               activeColor="text-green-400"
             />
             
-            {/* Control Panel Buttons */}
-            <div className="hidden xl:flex items-center gap-2 ml-6 pl-6 border-l border-slate-700/50">
-              <Button size="sm" variant="outline" className="h-8 text-xs font-bold border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/20 text-blue-300" onClick={() => triggerEvent('cloud_cover', { intensity: 0.8, duration: 30 })}>
-                <CloudRain className="w-3 h-3 mr-1.5" /> Cloud Cover
-              </Button>
-              <Button size="sm" variant="outline" className="h-8 text-xs font-bold border-red-500/50 bg-red-500/5 hover:bg-red-500/20 text-red-300" onClick={() => triggerEvent('grid_failure', { duration: 60 })}>
-                <ShieldAlert className="w-3 h-3 mr-1.5" /> Grid Failure
-              </Button>
-              <Button size="sm" variant="outline" className="h-8 text-xs font-bold border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/20 text-amber-300" onClick={() => triggerEvent('price_update', { price: 0.50 })}>
-                <DollarSign className="w-3 h-3 mr-1.5" /> Price Surge
-              </Button>
-            </div>
           </div>
 
           {/* Mobile Menu */}
@@ -372,20 +322,7 @@ function App() {
           </Sheet>
         </div>
 
-        {/* Alert Banner */}
-        {(hasCloudCover || hasGridFailure) && (
-          <div className={`px-4 py-2 flex items-center gap-2 ${
-            hasGridFailure ? 'bg-red-500/20 border-b border-red-500/50' : 'bg-amber-500/20 border-b border-amber-500/50'
-          }`}>
-            <AlertTriangle className={`w-4 h-4 ${hasGridFailure ? 'text-red-400' : 'text-amber-400'}`} />
-            <span className={`text-sm ${hasGridFailure ? 'text-red-300' : 'text-amber-300'}`}>
-              {hasGridFailure 
-                ? '⚠️ GRID FAILURE DETECTED - Buildings operating in island mode'
-                : '☁️ Cloud cover event - Solar generation reduced by 80%'
-              }
-            </span>
-          </div>
-        )}
+
       </header>
 
       {/* Main Content */}
@@ -394,7 +331,7 @@ function App() {
           {/* 3D City View */}
           <div className="flex-1 relative">
             <CityGrid 
-              buildings={displayBuildings} 
+              buildings={buildings} 
               onBuildingClick={setSelectedBuilding}
             />
             
@@ -490,7 +427,7 @@ function App() {
                 Analytics Dashboard
               </h2>
               <AnalyticsDashboard 
-                buildings={displayBuildings}
+                buildings={buildings}
                 analytics={analytics}
                 marketStatus={marketStatus}
                 history={history}
