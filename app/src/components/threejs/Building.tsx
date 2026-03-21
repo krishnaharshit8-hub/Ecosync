@@ -22,41 +22,35 @@ export function Building({ data, position, onClick }: BuildingProps) {
     let height = 1;
     let scaleY = 1;
 
-    if (data.is_critical) {
-      color = '#ef4444'; // Red for critical
-      emissive = '#dc2626';
-      height = 1.5;
-    } else if (data.is_selling) {
-      color = '#22c55e'; // Green for selling
-      emissive = '#16a34a';
-      height = 1.2 + (data.battery_soc / 100) * 0.4;
-      scaleY = 1 + (data.battery_soc / 100) * 0.3;
-    } else if (data.is_buying) {
-      color = '#f59e0b'; // Amber for buying
-      emissive = '#d97706';
-      height = 0.9;
-    } else if (data.is_priority) {
-      color = '#a855f7'; // Purple for priority buildings
-      emissive = '#7c3aed';
-      height = 1.6;
-    }
+    // Deterministic random offset for building size variation
+    const randSize = (data.building_id * 13.7) % 1;
 
-    // Adjust height based on building type
-    switch (data.building_type) {
-      case 'hospital':
-        height *= 2;
-        break;
-      case 'datacenter':
-        height *= 1.8;
-        break;
-      case 'commercial':
-        height *= 1.4;
-        break;
-      case 'residential':
-        height *= 0.9;
-        break;
-      default:
-        height *= 1.1;
+    if (data.is_critical) {
+      // Large buildings (Priority / Critical)
+      height = 2.2 + (randSize * 1.5); // Range: 2.2 to 3.7
+      
+      if (data.battery_soc < 40) {
+        color = '#ef4444'; // Red for critical priority
+        emissive = '#dc2626';
+      } else {
+        color = '#a855f7'; // Purple for stable priority
+        emissive = '#7c3aed';
+      }
+    } else {
+      // Normal buildings with varying random sizes
+      height = 0.6 + (randSize * 1.2); // Range: 0.6 to 1.8
+
+      // Shuffle colors based on their dynamic simulated states
+      if (data.is_selling) {
+        color = '#22c55e'; // Green for selling
+        emissive = '#16a34a';
+      } else if (data.is_buying) {
+        color = '#f59e0b'; // Amber for buying
+        emissive = '#d97706';
+      } else {
+        color = '#3b82f6'; // Blue for balanced
+        emissive = '#1e40af';
+      }
     }
 
     return { color, emissive, height, scaleY };
