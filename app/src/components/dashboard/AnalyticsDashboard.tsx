@@ -322,7 +322,7 @@ export function AnalyticsDashboard({
           </CardHeader>
           <CardContent>
             <div className="flex flex-col items-center gap-3">
-              <ResponsiveContainer width="100%" height={140}>
+              <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
                   <Pie
                     data={statusDistribution}
