@@ -197,8 +197,11 @@ function App() {
       is_selling: Math.random() > 0.6,
       is_buying: Math.random() > 0.7,
       is_critical: i < 3,
+      is_priority: i < 2,
       net_energy: parseFloat((Math.random() * 40 - 20).toFixed(1)),
       trading_status: ['selling','buying','idle'][Math.floor(Math.random()*3)],
+      grid_frequency: parseFloat((Math.random() * 0.2 + 59.9).toFixed(2)),
+      timestamp: new Date().toISOString(),
     }));
   }, [mockTick]);
 
