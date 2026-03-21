@@ -12,7 +12,8 @@
 
 ## 🚀 Live Demo
 
-**Frontend**: https://wds3taj7loudu.ok.kimi.link
+**Frontend**: 
+https://ecosync-nu.vercel.app/
 
 ## ✨ Features
 
