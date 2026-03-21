@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Zap, 
   Activity, 
@@ -181,6 +181,38 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [terminalExpanded, setTerminalExpanded] = useState(false);
   const [page, setPage] = useState('home');
+  const [mockTick, setMockTick] = useState(0);
+
+  const MOCK_BUILDINGS = useMemo(() => {
+    return Array.from({ length: 20 }, (_, i) => ({
+      building_id: i + 1,
+      building_type: i === 0 ? 'hospital' 
+        : i === 1 ? 'datacenter' 
+        : i < 5 ? 'commercial' 
+        : 'residential',
+      load: parseFloat((Math.random() * 80 + 20).toFixed(1)),
+      solar_generation: parseFloat((Math.random() * 60 + 10).toFixed(1)),
+      battery_soc: parseFloat((Math.random() * 70 + 20).toFixed(1)),
+      grid_connected: true,
+      is_selling: Math.random() > 0.6,
+      is_buying: Math.random() > 0.7,
+      is_critical: i < 3,
+      net_energy: parseFloat((Math.random() * 40 - 20).toFixed(1)),
+      trading_status: ['selling','buying','idle'][Math.floor(Math.random()*3)],
+    }));
+  }, [mockTick]);
+
+  useEffect(() => {
+    if (buildings.length === 0) {
+      const interval = setInterval(() => {
+        // trigger re-render with new random values
+        setMockTick(t => t + 1)
+      }, 2000)
+      return () => clearInterval(interval)
+    }
+  }, [buildings.length]);
+
+  const displayBuildings = buildings.length > 0 ? buildings : MOCK_BUILDINGS;
 
   // Get active grid events
   const activeEvents = gridEvents.filter(e => e.active);
@@ -359,7 +391,7 @@ function App() {
           {/* 3D City View */}
           <div className="flex-1 relative">
             <CityGrid 
-              buildings={buildings} 
+              buildings={displayBuildings} 
               onBuildingClick={setSelectedBuilding}
             />
             
@@ -455,7 +487,7 @@ function App() {
                 Analytics Dashboard
               </h2>
               <AnalyticsDashboard 
-                buildings={buildings}
+                buildings={displayBuildings}
                 analytics={analytics}
                 marketStatus={marketStatus}
                 history={history}
