@@ -7,22 +7,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        'eco-green':  '#00F5A0',
-        'eco-blue':   '#00D4FF',
-        'eco-purple': '#7C6BFF',
-        'eco-yellow': '#FFD166',
-        'eco-red':    '#FF6B6B',
-        'eco-dark':   '#000000',
-        'eco-panel':  '#0A0A0A',
+        'eco-cyan': '#00D4FF',
+        'eco-green': '#00F5A0',
+        'eco-amber': '#FFD700',
+        'eco-orange': '#FF6B00',
+        'eco-red': '#FF3333',
+        'eco-blue': '#0066FF',
+        'eco-dark': '#060D1A',
+        'eco-panel': '#0A1628',
       },
       fontFamily: {
-        'syne': ['Syne', 'sans-serif'],
-        'mono': ['IBM Plex Mono', 'monospace'],
-      },
-      animation: {
-        'pulse-dot': 'pulse-dot 1.5s ease-in-out infinite',
-        'gradient-shift': 'gradient-shift 4s ease infinite',
-        'float-orb': 'float-orb 6s ease-in-out infinite',
+        'inter': ['Inter', 'sans-serif'],
+        'mono': ['JetBrains Mono', 'monospace'],
       },
     },
   },
